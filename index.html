@@ -1,0 +1,245 @@
+// FRONTEND: React (with Tailwind)
+// File: src/App.jsx
+import { useEffect, useState } from 'react'
+import axios from 'axios'
+
+export default function App() {
+  const [gold, setGold] = useState(0)
+  const [level, setLevel] = useState(1)
+  const [castleLevel, setCastleLevel] = useState(1)
+  const [username, setUsername] = useState('')
+  const [inventory, setInventory] = useState([])
+  const [mission, setMission] = useState(null)
+  const [floor, setFloor] = useState(1)
+  const [requiredPower, setRequiredPower] = useState(0)
+  const [selectedItem, setSelectedItem] = useState(null) // Добавим состояние для выбранного предмета
+
+  const getKnightImage = () => {
+    const armorTier = level >= 20 ? 'legendary' : level >= 15 ? 'epic' : level >= 10 ? 'rare' : 'basic'
+    const hasEpicWeapon = inventory.some(item => item.toLowerCase().includes('эпический'))
+    const hasLegendaryWeapon = inventory.some(item => item.toLowerCase().includes('легендарный'))
+
+    if (hasLegendaryWeapon) return `/knight-${armorTier}-legendary.png`
+    if (hasEpicWeapon) return `/knight-${armorTier}-epic.png`
+    return `/knight-${armorTier}.png`
+  }
+
+  const calculatePower = () => {
+    let base = level + castleLevel * 0.5
+    inventory.forEach(item => {
+      if (item.includes('Легендарный')) base += 5
+      else if (item.includes('Эпический')) base += 3
+      else if (item.includes('Редкий')) base += 2
+      else base += 1
+    })
+    return base
+  }
+
+  const saveProgress = (newState = {}) => {
+    axios.post('/api/progress', {
+      username,
+      gold,
+      level,
+      castleLevel,
+      inventory,
+      mission,
+      floor,
+      requiredPower,
+      ...newState
+    })
+  }
+
+  const handleClick = () => {
+    const gained = level * 10
+    const newGold = gold + gained
+    setGold(newGold)
+    saveProgress({ gold: newGold })
+  }
+
+  const upgrade = () => {
+    if (gold >= level * 100) {
+      const newLevel = level + 1
+      const newGold = gold - level * 100
+      setLevel(newLevel)
+      setGold(newGold)
+      saveProgress({ gold: newGold, level: newLevel })
+    }
+  }
+
+  const upgradeCastle = () => {
+    const cost = castleLevel * 200
+    if (gold >= cost) {
+      const newGold = gold - cost
+      const newCastleLevel = castleLevel + 1
+      setCastleLevel(newCastleLevel)
+      setGold(newGold)
+      saveProgress({ gold: newGold, castleLevel: newCastleLevel })
+    }
+  }
+
+  const addItem = () => {
+    const rarities = ['Обычный', 'Редкий', 'Эпический', 'Легендарный']
+    const rarity = rarities[Math.floor(Math.random() * rarities.length)]
+    const item = `${rarity} меч уровня ${level}`
+    const newInventory = [...inventory, item]
+    setInventory(newInventory)
+    saveProgress({ inventory: newInventory })
+  }
+
+  const newMission = () => {
+    const m = `Этаж ${floor}: Победи ${floor * 3} врагов`
+    const powerNeeded = floor * 10 + Math.floor(Math.random() * 10)
+    setMission(m)
+    setRequiredPower(powerNeeded)
+    saveProgress({ mission: m, requiredPower: powerNeeded })
+  }
+
+  const completeMission = () => {
+    const playerPower = calculatePower()
+    if (playerPower < requiredPower) {
+      alert(`Недостаточно силы! Требуется: ${requiredPower}, у вас: ${Math.floor(playerPower)}`)
+      return
+    }
+
+    const reward = floor * 100
+    const newGold = gold + reward
+    const nextFloor = floor + 1
+    setGold(newGold)
+    setFloor(nextFloor)
+    setMission(null)
+    setRequiredPower(0)
+    saveProgress({ gold: newGold, floor: nextFloor, mission: null, requiredPower: 0 })
+  }
+
+  const equipItem = (item) => {
+    setSelectedItem(item)
+    // Экипируем предмет, добавив его в снаряжение рыцаря
+    const newInventory = inventory.filter(i => i !== item) // Убираем предмет из инвентаря
+    setInventory(newInventory)
+    saveProgress({ inventory: newInventory })
+  }
+
+  useEffect(() => {
+    const savedUser = localStorage.getItem('username')
+    if (savedUser) {
+      setUsername(savedUser)
+      axios.get(`/api/progress/${savedUser}`).then(res => {
+        setGold(res.data.gold)
+        setLevel(res.data.level)
+        setCastleLevel(res.data.castleLevel || 1)
+        setInventory(res.data.inventory || [])
+        setMission(res.data.mission || null)
+        setFloor(res.data.floor || 1)
+        setRequiredPower(res.data.requiredPower || 0)
+      })
+    }
+  }, [])
+
+  const register = () => {
+    if (!username) return
+    localStorage.setItem('username', username)
+    axios.post('/api/register', { username }).then(() => {
+      axios.get(`/api/progress/${username}`).then(res => {
+        setGold(res.data.gold)
+        setLevel(res.data.level)
+        setCastleLevel(res.data.castleLevel || 1)
+        setInventory(res.data.inventory || [])
+        setMission(res.data.mission || null)
+        setFloor(res.data.floor || 1)
+        setRequiredPower(res.data.requiredPower || 0)
+      })
+    })
+  }
+
+  if (!username) {
+    return (
+      <div className="min-h-screen bg-yellow-100 flex flex-col items-center justify-center font-serif">
+        <h1 className="text-3xl font-bold mb-4">⚔️ Введите имя рыцаря ⚔️</h1>
+        <input
+          type="text"
+          value={username}
+          onChange={e => setUsername(e.target.value)}
+          className="p-2 border rounded-xl mb-4"
+        />
+        <button onClick={register} className="bg-green-700 text-white px-6 py-2 rounded-xl">
+          Войти
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-yellow-100 flex flex-col items-center justify-center text-center font-serif px-4 py-6">
+      <h1 className="text-4xl font-bold mb-4">⚔️ Рыцарский Кликер ⚔️</h1>
+
+      {/* Окно рыцаря */}
+      <div className="bg-white border-4 border-gray-700 rounded-xl shadow-xl p-4 mb-6 w-full max-w-sm">
+        <h2 className="text-2xl font-semibold mb-2">🧍‍♂️ Рыцарь</h2>
+        <img src={getKnightImage()} alt="Рыцарь" className="w-40 h-40 mx-auto mb-2 rounded-full border-2 border-gray-500" />
+        <p className="text-lg">{username}</p>
+        <p className="text-sm text-gray-600">Ур. рыцаря: {level} | Замок: {castleLevel}</p>
+      </div>
+
+      <p className="text-xl mb-2">Золото: {gold}</p>
+      <p className="text-lg mb-2">Этаж: {floor}</p>
+
+      <button onClick={handleClick} className="bg-yellow-600 hover:bg-yellow-700 text-white px-6 py-3 rounded-2xl shadow-xl mb-2">
+        Ковать золото 🪙
+      </button>
+
+      <button onClick={upgrade} disabled={gold < level * 100} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-6 py-3 rounded-2xl shadow-xl mb-2">
+        Улучшить рыцаря (стоимость: {level * 100}) 🛡️
+      </button>
+
+      <button onClick={upgradeCastle} disabled={gold < castleLevel * 200} className="bg-gray-700 hover:bg-gray-800 disabled:opacity-50 text-white px-6 py-3 rounded-2xl shadow-xl mb-2">
+        Улучшить замок (стоимость: {castleLevel * 200}) 🏰
+      </button>
+
+      <button onClick={addItem} className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-2xl shadow-xl mb-2">
+        Получить предмет 🎒
+      </button>
+
+      <button onClick={newMission} className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-2xl shadow-xl mb-4">
+        Новая миссия 🧭
+      </button>
+
+      {mission && (
+        <div className="mb-4">
+          <p className="mb-2">📜 Миссия: {mission}</p>
+          <p className="text-sm text-red-700">⚠️ Требуемая сила: {requiredPower}</p>
+          <p className="text-sm text-green-700">Ваша сила: {Math.floor(calculatePower())}</p>
+          <button onClick={completeMission} className="bg-green-700 hover:bg-green-800 text-white px-4 py-2 rounded-xl mt-2">
+            Завершить миссию (+{floor * 100} золота)
+          </button>
+        </div>
+      )}
+
+      {/* Инвентарь */}
+      <div className="w-full max-w-md">
+        <h2 className="text-xl font-semibold mb-2">🎒 Инвентарь:</h2>
+        <ul className="bg-white rounded-xl shadow p-4 space-y-1">
+          {inventory.length > 0 ? (
+            inventory.map((item, index) => (
+              <li key={index}>
+                • {item} 
+                <button onClick={() => equipItem(item)} className="bg-green-600 hover:bg-green-700 text-white px-4 py-1 ml-2 rounded-xl">
+                  Экипировать
+                </button>
+              </li>
+            ))
+          ) : (
+            <li>Пусто</li>
+          )}
+        </ul>
+      </div>
+
+      {/* Отображение выбранного предмета */}
+      {selectedItem && (
+        <div className="mt-4">
+          <h2 className="text-xl font-semibold">Вы выбрали:</h2>
+          <p>{selectedItem}</p>
+        </div>
+      )}
+    </div>
+  )
+}
